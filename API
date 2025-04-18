@@ -16,10 +16,16 @@ creds, _ = default()
 gc = gspread.authorize(creds)
 
 # ————— CONFIGURAÇÕES —————
-API_TOKEN = "COLOQUE_SEU_TOKEN"
-ON_BEHALF_OF_ID = "COLOQUE_SEU_CÓDIGO"
+API_TOKEN = "SEU_TOKEN"
+ON_BEHALF_OF_ID = "SEU_ID"
 GREENHOUSE_DISABLE_URL = "https://harvest.greenhouse.io/v2/users/disable"
-URL_PLANILHA_DE_RESCISÕES = "COLOQUE O LINK DA SUA PLANILHA"
+URL_PLANILHA = "LINK_DA_SUA_PLANILHA"
+
+# ————— DATA DE HOJE —————
+hoje = datetime.now().date()
+data_execucao_str = hoje.strftime("%Y%m%d")
+log_path = f"/content/log_desabilitacoes_{data_execucao_str}.csv"
+log_resultados = []
 
 # ————— ABERTURA DO DOCUMENTO —————
 spreadsheet = gc.open_by_url(URL_PLANILHA)
@@ -31,20 +37,15 @@ abas = [aba for aba in todas_abas if "/25" in aba and len(aba) == 6]
 print("🔍 Abas selecionadas automaticamente:")
 print(abas)
 
-# ————— DATA DE HOJE —————
-hoje = datetime.now().date()
-
 # ————— LOOP NAS ABAS —————
 for nome_aba in abas:
     try:
         worksheet = spreadsheet.worksheet(nome_aba)
         dados = worksheet.get_all_values()
 
-        # Garante que tenha dados o suficiente (pelo menos cabeçalho + 1 linha)
         if len(dados) < 3:
             print(f"⚠️ Aba '{nome_aba}' não tem dados suficientes.")
             continue
-
         # Precisei usar a linha 2 (index 1) como cabeçalho mas você pode usar a primeira com o código: df = pd.DataFrame(dados[1:], columns=dados[0])
         df = pd.DataFrame(dados[2:], columns=dados[1])
         df = df.dropna(subset=["E-mail Corporativo", "Data Rescisão"], how='any')
@@ -57,7 +58,6 @@ for nome_aba in abas:
                 if pd.isna(data_rescisao):
                     continue
 
-                # ——— REGRA: desabilita todo mundo que já foi desligado até hoje ———
                 if data_rescisao.date() <= hoje:
                     payload = { "user": { "email": email } }
                     headers = {
@@ -69,11 +69,30 @@ for nome_aba in abas:
 
                     if response.status_code == 200:
                         print(f"✅ {email} desabilitado (rescisão em {data_rescisao.date()})")
+                        log_resultados.append({
+                            "email": email,
+                            "data_rescisao": data_rescisao.date(),
+                            "data_execucao": hoje,
+                            "status": "desabilitado"
+                        })
                     else:
                         print(f"❌ Erro ao desabilitar {email} — {response.status_code} | {response.text}")
+                        log_resultados.append({
+                            "email": email,
+                            "data_rescisao": data_rescisao.date(),
+                            "data_execucao": hoje,
+                            "status": f"erro {response.status_code}"
+                        })
 
             except Exception as erro:
-                print(f"Erro com a linha: {row} \n{erro}")
+                print(f"❌ Erro com o e-mail '{row.get('E-mail Corporativo', 'indefinido')}' — {erro}")
 
     except Exception as erro:
         print(f"❌ Erro na aba '{nome_aba}': {erro}")
+
+# ————— SALVA O LOG —————
+if log_resultados:
+    pd.DataFrame(log_resultados).to_csv(log_path, index=False)
+    print(f"\n📦 Log salvo com {len(log_resultados)} registros em: {log_path}")
+else:
+    print("\n🟡 Nenhum usuário desabilitado hoje — log não gerado.")
