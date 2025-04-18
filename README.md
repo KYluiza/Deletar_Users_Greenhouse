@@ -1,17 +1,15 @@
+### 📄 Automação para desabilitar Usuários no Greenhouse automaticamente com Log Diário
 
-### 📄  Automação de Desabilitação de Usuários Greenhouse com Google Sheets
-
-Este script automatiza a desativação de usuários desligados da empresa via API da Greenhouse, a partir de dados armazenados em uma planilha do Google Sheets.
+Este script automatiza a **revogação de acessos de colaboradores desligados** via API do Greenhouse, com base em uma planilha do Google Sheets, e gera um log diário com os resultados.
 
 ---
 
 ## ✅ O que este script faz?
 
-- Acessa uma planilha com abas mensais (`Jan/25`, `Fev/25`, etc.) com dados de desligamento
-- Lê e-mails e datas de rescisão a partir da **linha 2** da planilha
-- Verifica se o colaborador foi desligado **até a data atual**
-- **Desabilita o usuário na Greenhouse** via requisição `PATCH` na API
-- Evita duplicidade através de um arquivo de log local (`log_desabilitados.csv`)
+- Lê abas mensais (`Jan/25`, `Fev/25`, etc.) de uma planilha de desligamentos
+- Verifica se o colaborador foi desligado até hoje
+- Desabilita o e-mail correspondente na Greenhouse via API (`PATCH`)
+- Cria um log `.csv` diário com os e-mails processados e seus status
 
 ---
 
@@ -19,74 +17,62 @@ Este script automatiza a desativação de usuários desligados da empresa via AP
 
 A planilha precisa conter:
 
-- Abas nomeadas no padrão `Mês/25` (ex: `Abr/25`, `Mai/25`)
-- Linha 2 com os nomes das colunas
-- Duas colunas obrigatórias:
-  - **`E-mail Corporativo`**: endereço de e-mail da pessoa a ser desabilitada
-  - **`Data Rescisão`**: data da rescisão no formato `dd/mm/aa`
+- Abas com nomes no formato `Mes/25` (ex: `Abr/25`, `Mai/25`)
+- Linha 2 com os nomes das colunas (linha 1 é visual)
+- Pelo menos estas colunas:
+
+| Coluna               | Descrição                                    |
+|----------------------|----------------------------------------------|
+| `E-mail Corporativo` | E-mail do colaborador (usado na API)         |
+| `Data Rescisão`      | Data da rescisão (formato `dd/mm/aa`)        |
 
 ---
 
 ## ⚙️ Requisitos
 
-- Rodar o script no Google Colab
-- Ter acesso à planilha do Google Sheets
-- Ter acesso à API da Greenhouse
+- Google Colab para autenticação automática com Google Sheets
+- Permissão de leitura na planilha
+- Permissão de escrita na API da Greenhouse (Harvest API)
 
 ---
 
 ## 🚀 Como usar
 
-1. **Abra no Google Colab**
-2. **Execute todas as células**
-3. Quando solicitado, autentique com sua conta Google para acesso ao Google Sheets
+1. Acesse o [Google Colab](https://colab.research.google.com/)
+2. Cole e execute o código Python completo
+3. Autentique com sua conta Google quando solicitado
 4. O script:
-   - Verifica as abas da planilha com nome `/25`
-   - Processa os e-mails com `Data Rescisão <= hoje`
-   - Verifica se o e-mail **já está no log**
-   - Se não estiver, **envia o PATCH para desabilitação**
-   - Salva o resultado no arquivo `log_desabilitados.csv`
+   - Seleciona abas do tipo `Mês/25`
+   - Verifica todos os desligamentos até a data atual
+   - Desabilita os e-mails via Greenhouse
+   - Gera um log no formato `log_desabilitacoes_20250417.csv`
 
 ---
 
-## 📦 Dependências
+## 🔐 Como obter as credenciais do Greenhouse
 
-As bibliotecas são instaladas automaticamente no início do script:
+### 1. API Token (Harvest)
 
-```python
-!pip install --upgrade gspread pandas gspread_dataframe
-```
+1. Acesse: `Configure > Dev Center > API Credential Management`
+2. Clique em **Create New API Key**
+3. Tipo: `Harvest`
+4. Nome: `Disable Users Script`
+5. Salve o token gerado
 
----
-
-## 🔐 Como obter as credenciais da Greenhouse
-
-### 1. API Token
-
-1. Acesse o Greenhouse com uma conta de administrador
-2. Vá em: `Configure > Dev Center > API Credential Management`
-3. Clique em **Create New API Key**
-   - Tipo: `Harvest`
-   - Nome: `Disable Users Script`
-4. Salve o token gerado
-5. Use no código assim:
-
-```python
-API_TOKEN = "Basic SEU_TOKEN"
-```
-
-> ⚠️ O token precisa estar no formato `Basic <seu_token>`, com **Base64 encoding** se necessário.
+> **IMPORTANTE:** o token precisa ser usado com o prefixo `"Basic "`  
+> Exemplo:
+> ```python
+> API_TOKEN = "Basic SEU_TOKEN_AQUI"
+> ```
 
 ---
 
 ### 2. On-Behalf-Of ID
 
-- Este ID representa o `user_id` do usuário em nome do qual a requisição será feita
-- Você pode encontrá-lo em:
-  - `GET /v1/users` via API
-  - Ou consultar via interface com ajuda da Greenhouse
-
-Use no script assim:
+- Esse ID representa o `user_id` que executa a requisição na API
+- Para obter:
+  - Use `GET /v1/users` da API
+  - Ou peça ao administrador da Greenhouse
 
 ```python
 ON_BEHALF_OF_ID = "1234567890"
@@ -94,15 +80,16 @@ ON_BEHALF_OF_ID = "1234567890"
 
 ---
 
-## 📄 Sobre o log `log_desabilitados.csv`
+## 📦 Sobre o log diário
 
-- Armazena todos os e-mails processados com:
+O script gera um arquivo `.csv` por dia com os resultados:
+
+- Nome: `log_desabilitacoes_YYYYMMDD.csv`
+- Colunas:
   - `email`
   - `data_rescisao`
   - `data_execucao`
-  - `status` (desabilitado ou erro)
-- Evita que o mesmo e-mail seja processado novamente
-- Pode ser baixado manualmente pelo Colab ou enviado diretamente para sua pasta no drive
+  - `status`
 
 ---
 
@@ -113,23 +100,24 @@ ON_BEHALF_OF_ID = "1234567890"
 ['Mar/25', 'Abr/25', 'Mai/25']
 
 ✅ joana.silva@empresa.com desabilitado (rescisão em 2025-04-14)
-⏩ paulo.souza@empresa.com já foi processado anteriormente — ignorando.
 ❌ Erro ao desabilitar maria.lima@empresa.com — 404 | User not found
 
-📦 Log salvo em: /content/log_desabilitados-dd/mm/yyyy.csv
+📦 Log salvo com 2 registros em: /content/log_desabilitacoes_yyyymmdd.csv
 ```
 
 ---
 
 ## 📌 Recomendações
 
-- Agende este script para rodar diariamente no Colab ou via cron no servidor
-- Salve o log externamente (ex: Google Drive) para persistência entre execuções
-- Avalie mover o log para uma aba de log no próprio Google Sheets, se quiser manter tudo na nuvem
+- Execute diariamente (ex: agende via Google Colab ou servidor)
+- Armazene os logs no Google Drive ou outro local persistente
+- Revise o log manualmente se houver erros (`status` começa com `erro`)
 
 ---
 
 ## 🛡️ Licença
 
 MIT License
+
+
 
