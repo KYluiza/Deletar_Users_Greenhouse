@@ -1,0 +1,79 @@
+!pip install --upgrade gspread pandas gspread_dataframe
+from google.colab import drive
+import os
+import pandas as pd
+import numpy as np
+from google.colab import auth
+from google.auth import default
+import gspread
+from gspread_dataframe import get_as_dataframe
+from datetime import datetime, timedelta
+import requests
+
+# ————— AUTENTICAÇÃO GOOGLE —————
+auth.authenticate_user()
+creds, _ = default()
+gc = gspread.authorize(creds)
+
+# ————— CONFIGURAÇÕES —————
+API_TOKEN = "COLOQUE_SEU_TOKEN"
+ON_BEHALF_OF_ID = "COLOQUE_SEU_CÓDIGO"
+GREENHOUSE_DISABLE_URL = "https://harvest.greenhouse.io/v2/users/disable"
+URL_PLANILHA_DE_RESCISÕES = "COLOQUE O LINK DA SUA PLANILHA"
+
+# ————— ABERTURA DO DOCUMENTO —————
+spreadsheet = gc.open_by_url(URL_PLANILHA)
+
+# ————— LISTAGEM DINÂMICA DAS ABAS NO FORMATO Mês/25 —————
+todas_abas = [sheet.title for sheet in spreadsheet.worksheets()]
+abas = [aba for aba in todas_abas if "/25" in aba and len(aba) == 6]
+
+print("🔍 Abas selecionadas automaticamente:")
+print(abas)
+
+# ————— DATA DE HOJE —————
+hoje = datetime.now().date()
+
+# ————— LOOP NAS ABAS —————
+for nome_aba in abas:
+    try:
+        worksheet = spreadsheet.worksheet(nome_aba)
+        dados = worksheet.get_all_values()
+
+        # Garante que tenha dados o suficiente (pelo menos cabeçalho + 1 linha)
+        if len(dados) < 3:
+            print(f"⚠️ Aba '{nome_aba}' não tem dados suficientes.")
+            continue
+
+        # Precisei usar a linha 2 (index 1) como cabeçalho mas você pode usar a primeira com o código: df = pd.DataFrame(dados[1:], columns=dados[0])
+        df = pd.DataFrame(dados[2:], columns=dados[1])
+        df = df.dropna(subset=["E-mail Corporativo", "Data Rescisão"], how='any')
+
+        for _, row in df.iterrows():
+            try:
+                email = str(row["E-mail Corporativo"]).strip().lower()
+                data_rescisao = pd.to_datetime(str(row["Data Rescisão"]), dayfirst=True, errors="coerce")
+
+                if pd.isna(data_rescisao):
+                    continue
+
+                # ——— REGRA: desabilita todo mundo que já foi desligado até hoje ———
+                if data_rescisao.date() <= hoje:
+                    payload = { "user": { "email": email } }
+                    headers = {
+                        "Authorization": API_TOKEN,
+                        "Content-Type": "application/json",
+                        "On-Behalf-Of": ON_BEHALF_OF_ID
+                    }
+                    response = requests.patch(GREENHOUSE_DISABLE_URL, json=payload, headers=headers)
+
+                    if response.status_code == 200:
+                        print(f"✅ {email} desabilitado (rescisão em {data_rescisao.date()})")
+                    else:
+                        print(f"❌ Erro ao desabilitar {email} — {response.status_code} | {response.text}")
+
+            except Exception as erro:
+                print(f"Erro com a linha: {row} \n{erro}")
+
+    except Exception as erro:
+        print(f"❌ Erro na aba '{nome_aba}': {erro}")
