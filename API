@@ -15,6 +15,7 @@ auth.authenticate_user()
 creds, _ = default()
 gc = gspread.authorize(creds)
 
+
 # ————— CONFIGURAÇÕES —————
 API_TOKEN = "SEU_TOKEN"
 ON_BEHALF_OF_ID = "SEU_ID"
